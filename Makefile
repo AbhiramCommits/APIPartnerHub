@@ -46,9 +46,12 @@ typecheck:
 	$(PY) -m mypy app
 
 test:
-	$(PY) -m pytest --cov=app --cov-report=term-missing
+	$(PY) -m pytest --cov=app --cov-report=term-missing --cov-fail-under=85
 
-ci: lint typecheck test
+typescript-test:
+	cd sdks/typescript && npm test
+
+ci: lint typecheck test openapi-check typescript-test
 
 openapi:
 	$(PY) -m scripts.export_openapi

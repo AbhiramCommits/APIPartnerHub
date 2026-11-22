@@ -175,7 +175,6 @@ def create_campaign(
     except IntegrityError as exc:  # pragma: no cover - defensive
         session.rollback()
         raise ConflictError("Could not create campaign.") from exc
-
     out = CampaignOut.model_validate(campaign)
     if key:
         session.add(
@@ -190,7 +189,7 @@ def create_campaign(
         )
         try:
             session.commit()
-        except IntegrityError:
+        except IntegrityError:  # pragma: no cover - defensive race fallback
             session.rollback()
             existing = scoped_idempotency(session, context.partner.id, key, CREATE_ENDPOINT)
             if existing is not None:

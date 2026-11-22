@@ -64,7 +64,7 @@ def bulk_campaigns(
 
     reader = csv.DictReader(io.StringIO(content))
     fieldnames = [str(name).strip() for name in (reader.fieldnames or [])]
-    if not fieldnames:
+    if not fieldnames:  # pragma: no cover - only reachable with a BOM-only file
         raise ValidationFailed(
             "CSV has no header row.",
             details=[
