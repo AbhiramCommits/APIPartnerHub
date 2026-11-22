@@ -1,0 +1,7 @@
+name,status,daily_budget_cents,objective
+Acme Spring Awareness 01,active,15000,awareness
+Acme Retargeting 02,active,22000,conversions
+Acme Bad Status Row,pausedd,12000,awareness
+Globex Consideration Push 03,paused,18000,consideration
+Globex Bad Budget Row,active,-500,conversions
+Initech Retention Wave 04,active,90000,retention

@@ -1,0 +1,5 @@
+name,status,daily_budget_cents,objective
+Bad Status,launched,1000,awareness
+Bad Budget,active,abc,conversions
+Bad Objective,active,5000,loyalty
+,active,5000,awareness

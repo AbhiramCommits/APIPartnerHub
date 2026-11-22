@@ -24,7 +24,7 @@ from app.errors import (
     validation_error_handler,
 )
 from app.redis_client import get_redis
-from app.routers import oauth
+from app.routers import bulk, campaigns, oauth, partners, reports
 
 settings = get_settings()
 logger = logging.getLogger("apipartnerhub")
@@ -78,6 +78,10 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, unhandled_exception_handler)
 
     app.include_router(oauth.router)
+    app.include_router(partners.router, prefix="/v1")
+    app.include_router(campaigns.router, prefix="/v1")
+    app.include_router(reports.router, prefix="/v1")
+    app.include_router(bulk.router, prefix="/v1")
 
     @app.get(
         "/healthz",
