@@ -12,12 +12,14 @@ BENCH_DURATION ?= 8
 export
 
 .PHONY: install up down seed run health lint format typecheck test ci openapi openapi-check \
-	sdk-install sdk-test bench examples clean
+	sdk-install sdk-test typescript-test bench analyze examples bootstrap clean
 
 install:
 	python3.11 -m venv .venv
 	$(PIP) install --upgrade pip
 	$(PIP) install -e ".[dev]"
+
+bootstrap: install up seed
 
 up:
 	docker compose up -d --wait
