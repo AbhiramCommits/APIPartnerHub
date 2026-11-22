@@ -23,8 +23,12 @@ from app.errors import (
     unhandled_exception_handler,
     validation_error_handler,
 )
+from app.logging_config import configure_logging
+from app.middleware import AccessLogMiddleware, RateLimitMiddleware, RequestContextMiddleware
 from app.redis_client import get_redis
-from app.routers import bulk, campaigns, oauth, partners, reports
+from app.routers import bulk, campaigns, oauth, ops, partners, reports
+
+configure_logging()
 
 settings = get_settings()
 logger = logging.getLogger("apipartnerhub")
@@ -77,11 +81,18 @@ def create_app() -> FastAPI:
     app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
 
+    # Added innermost first: request context must be the outermost layer so every log line
+    # and error envelope (including rate-limit rejections) carries the request id.
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(AccessLogMiddleware)
+    app.add_middleware(RequestContextMiddleware)
+
     app.include_router(oauth.router)
     app.include_router(partners.router, prefix="/v1")
     app.include_router(campaigns.router, prefix="/v1")
     app.include_router(reports.router, prefix="/v1")
     app.include_router(bulk.router, prefix="/v1")
+    app.include_router(ops.router, prefix="/v1")
 
     @app.get(
         "/healthz",

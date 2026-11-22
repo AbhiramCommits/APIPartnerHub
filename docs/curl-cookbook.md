@@ -183,7 +183,7 @@ jq . /tmp/nf.json
     "message": "Campaign 26 was not found.",
     "code": "NF-001",
     "doc_url": "https://docs.apipartnerhub.dev/errors#not_found",
-    "request_id": "unknown",
+    "request_id": "455ee9f48519431f9a30928e9c977ca5",
     "details": []
   }
 }
@@ -255,7 +255,7 @@ Every API error (everything except `/oauth/token`) has exactly this shape:
     "message": "Invalid pagination cursor.",
     "code": "VAL-001",
     "doc_url": "https://docs.apipartnerhub.dev/errors#validation_failed",
-    "request_id": "0b6b1f5d6bd24b7e8f6c0d6a2f1c9e77",
+    "request_id": "11cc47e30cf640df8f4ec356a35a3865",
     "details": [{"field": "cursor", "message": "..."}]
   }
 }

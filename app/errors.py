@@ -58,10 +58,10 @@ class APIError(Exception):
             }
         }
 
-    def to_response(self) -> JSONResponse:
+    def to_response(self, request_id: str | None = None) -> JSONResponse:
         return JSONResponse(
             status_code=self.status_code,
-            content=self.to_envelope(),
+            content=self.to_envelope(request_id),
             headers=self.headers,
         )
 
@@ -129,15 +129,20 @@ class InternalError(APIError):
     default_message = "An unexpected error occurred. Contact support with the request id."
 
 
-def error_response(exc: APIError) -> JSONResponse:
-    return exc.to_response()
+def error_response(exc: APIError, request_id: str | None = None) -> JSONResponse:
+    return exc.to_response(request_id)
+
+
+def _request_id(request: Request) -> str:
+    state_id = getattr(request.state, "request_id", None)
+    return str(state_id) if state_id else get_request_id()
 
 
 async def api_error_handler(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, APIError)
     if exc.status_code >= 500:
         logger.exception("api_error", extra={"error_type": exc.error_type})
-    return error_response(exc)
+    return error_response(exc, _request_id(request))
 
 
 async def validation_error_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -153,7 +158,9 @@ async def validation_error_handler(request: Request, exc: Exception) -> JSONResp
                 "value": _safe_value(item.get("input")),
             }
         )
-    return ValidationFailed("Request validation failed.", details=details).to_response()
+    return ValidationFailed("Request validation failed.", details=details).to_response(
+        _request_id(request)
+    )
 
 
 async def http_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -166,14 +173,14 @@ async def http_exception_handler(request: Request, exc: Exception) -> JSONRespon
         mapped = AuthError()
     else:
         mapped = ValidationFailed(str(exc.detail))
-    return mapped.to_response()
+    return mapped.to_response(_request_id(request))
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.exception("unhandled_exception")
     # Keep the exception handler cheap and non-blocking for the event loop.
     await run_in_threadpool(lambda: None)
-    return InternalError().to_response()
+    return InternalError().to_response(_request_id(request))
 
 
 def _safe_value(value: Any) -> Any:
