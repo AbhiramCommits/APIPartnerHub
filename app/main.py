@@ -8,6 +8,7 @@ from typing import Any
 import redis
 from fastapi import Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -100,7 +101,7 @@ def create_app() -> FastAPI:
         summary="Health check",
         description="Pings Postgres and Redis. Returns 503 when a dependency is down.",
     )
-    async def healthz(
+    def healthz(
         session: Session = Depends(get_session),
     ) -> JSONResponse:
         checks: dict[str, Any] = {"db": "ok", "redis": "ok"}
@@ -125,7 +126,115 @@ def create_app() -> FastAPI:
         }
         return JSONResponse(status_code=200 if healthy else 503, content=body)
 
+    def custom_openapi() -> dict[str, Any]:
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+            tags=TAGS_METADATA,
+            servers=app.servers,
+            contact={
+                "name": "Partner Solutions Engineering",
+                "email": "partners@apipartnerhub.dev",
+            },
+            license_info={"name": "MIT", "url": "https://opensource.org/licenses/MIT"},
+        )
+        components = schema.setdefault("components", {})
+        security_schemes = components.setdefault("securitySchemes", {})
+        security_schemes["ApiKeyAuth"] = {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-Key",
+            "description": (
+                "Long-lived partner key formatted as `apph_live_<prefix>_<secret>`. "
+                "Send it on every request."
+            ),
+        }
+        security_schemes["OAuth2"] = {
+            "type": "oauth2",
+            "flows": {
+                "clientCredentials": {
+                    "tokenUrl": "/oauth/token",
+                    "scopes": {
+                        "partner:read": "Read the partner profile and internal stats.",
+                        "campaigns:read": "Read campaigns and their configuration.",
+                        "campaigns:write": "Create and update campaigns.",
+                        "reports:read": "Read aggregated performance reports.",
+                        "bulk:write": "Import campaigns from CSV.",
+                    },
+                }
+            },
+        }
+        for name, component in components.get("schemas", {}).items():
+            if isinstance(component, dict) and not component.get("description"):
+                component["description"] = _schema_description(name)
+        for path, operations in schema.get("paths", {}).items():
+            for method, operation in operations.items():
+                if not isinstance(operation, dict):
+                    continue
+                if path == "/oauth/token":
+                    operation["security"] = []
+                    continue
+                if path == "/healthz":
+                    operation["security"] = []
+                    operation.setdefault("responses", {}).setdefault(
+                        "503", {"description": "Postgres or Redis is unavailable."}
+                    )
+                    continue
+                if not path.startswith("/v1/"):
+                    continue
+                scope = _required_scope(path, method)
+                operation["security"] = [{"ApiKeyAuth": []}, {"OAuth2": [scope]}]
+                responses = operation.setdefault("responses", {})
+                responses.setdefault(
+                    "401", {"description": "Missing or invalid credentials (AUTH-001)."}
+                )
+                responses.setdefault(
+                    "403", {"description": "Credential lacks the required scope (SCOPE-001)."}
+                )
+                responses.setdefault(
+                    "429",
+                    {
+                        "description": (
+                            "Rate limit exceeded (RL-001). Retry after the Retry-After seconds."
+                        )
+                    },
+                )
+                responses.setdefault(
+                    "500", {"description": "Unexpected server error (INTERNAL-001)."}
+                )
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = custom_openapi  # type: ignore[method-assign]
+
     return app
+
+
+def _schema_description(name: str) -> str:
+    if name.startswith("Body_issue_token"):
+        return (
+            "Form-encoded OAuth 2.0 client-credentials request: grant_type, client_id, "
+            "client_secret and optional scope."
+        )
+    if name.startswith("Body_bulk_campaigns"):
+        return "Multipart form body containing the CSV file in the `file` field."
+    if name in {"HTTPValidationError", "ValidationError"}:
+        return "Framework-level validation detail schema (API errors use the error envelope)."
+    return f"{name} payload schema."
+
+
+def _required_scope(path: str, method: str) -> str:
+    if path.startswith("/v1/campaigns"):
+        return "campaigns:write" if method in {"post", "patch"} else "campaigns:read"
+    if path.startswith("/v1/reports"):
+        return "reports:read"
+    if path.startswith("/v1/bulk"):
+        return "bulk:write"
+    return "partner:read"
 
 
 app = create_app()

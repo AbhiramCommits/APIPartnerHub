@@ -6,7 +6,7 @@ import logging
 from typing import Annotated, Any
 
 import redis
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -25,6 +25,8 @@ router = APIRouter(tags=["OAuth"])
 
 
 class TokenResponse(BaseModel):
+    """OAuth access token response (RFC 6749 section 5.1)."""
+
     access_token: str = Field(description="Signed JWT to send as `Authorization: Bearer <token>`.")
     token_type: str = Field(default="bearer", description="Always `bearer`.")
     expires_in: int = Field(description="Token lifetime in seconds.")
@@ -70,15 +72,17 @@ def _rfc_error(
         401: {"description": "invalid_client (RFC 6749 shape)"},
     },
 )
-async def issue_token(
-    request: Request,
+def issue_token(
     session: Annotated[Session, Depends(get_session)],
+    grant_type: Annotated[str | None, Form()] = None,
+    client_id: Annotated[str | None, Form()] = None,
+    client_secret: Annotated[str | None, Form()] = None,
+    scope: Annotated[str | None, Form()] = None,
 ) -> TokenResponse | JSONResponse:
-    form = await request.form()
-    grant_type = str(form.get("grant_type") or "")
-    client_id = str(form.get("client_id") or "")
-    client_secret = str(form.get("client_secret") or "")
-    scope_param = form.get("scope")
+    grant_type = grant_type or ""
+    client_id = client_id or ""
+    client_secret = client_secret or ""
+    scope_param = scope
 
     if not client_id or not client_secret:
         return _rfc_error("invalid_request", "client_id and client_secret are required.", 400)

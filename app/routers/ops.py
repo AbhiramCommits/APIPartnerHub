@@ -21,7 +21,7 @@ router = APIRouter(tags=["Operations"])
         "per-endpoint latency. With multiple workers the counters are per process."
     ),
 )
-async def stats(
+def stats(
     context: Annotated[AuthContext, Depends(require_scopes("partner:read"))],
 ) -> dict[str, Any]:
     return observability.snapshot()

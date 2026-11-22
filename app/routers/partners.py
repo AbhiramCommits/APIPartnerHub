@@ -21,7 +21,7 @@ router = APIRouter(tags=["Partners"])
         "burst), granted scopes and the auth mode used for this request."
     ),
 )
-async def get_me(
+def get_me(
     request: Request,
     context: Annotated[AuthContext, Depends(require_scopes("partner:read"))],
 ) -> PartnerProfile:

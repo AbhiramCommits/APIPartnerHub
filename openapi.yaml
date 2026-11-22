@@ -1,0 +1,1162 @@
+openapi: 3.1.0
+info:
+  title: APIPartnerHub Partner API
+  description: '
+
+    Partner-facing advertising data API.
+
+
+    **Authentication** — send either a long-lived `X-API-Key` credential or an OAuth
+    2.0
+
+    client-credentials bearer token (`Authorization: Bearer <jwt>`). Scopes are enforced
+    per
+
+    endpoint. Mint tokens with `POST /oauth/token`.
+
+
+    **Reliability** — every `/v1` response carries `RateLimit-Limit`, `RateLimit-Remaining`
+    and
+
+    `RateLimit-Reset`, plus an `X-Request-ID`. Failures use one machine-readable envelope
+    with a
+
+    stable `code`, a `doc_url` and the request id for support escalation.
+
+
+    **Bulk data** — campaigns can be created in bulk from CSV and reports can be streamed
+    as CSV
+
+    for spreadsheet workflows.
+
+    '
+  contact:
+    name: Partner Solutions Engineering
+    email: partners@apipartnerhub.dev
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  version: 1.0.0
+servers:
+- url: http://localhost:8000
+  description: Local development
+- url: https://api.apipartnerhub.dev
+  description: Production
+paths:
+  /oauth/token:
+    post:
+      tags:
+      - OAuth
+      summary: Exchange client credentials for an access token
+      description: RFC 6749 client-credentials grant. Send `application/x-www-form-urlencoded`
+        fields `grant_type=client_credentials`, `client_id`, `client_secret` and optionally
+        `scope`.
+      operationId: issue_token_oauth_token_post
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Body_issue_token_oauth_token_post'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          description: unsupported_grant_type or invalid_scope (RFC 6749 shape)
+        '401':
+          description: invalid_client (RFC 6749 shape)
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+  /v1/partners/me:
+    get:
+      tags:
+      - Partners
+      summary: Get the authenticated partner
+      description: Returns the caller's profile, commercial tier, effective rate limit
+        (steady and burst), granted scopes and the auth mode used for this request.
+      operationId: get_me_v1_partners_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerProfile'
+        '401':
+          description: Missing or invalid credentials (AUTH-001).
+        '403':
+          description: Credential lacks the required scope (SCOPE-001).
+        '429':
+          description: Rate limit exceeded (RL-001). Retry after the Retry-After seconds.
+        '500':
+          description: Unexpected server error (INTERNAL-001).
+      security:
+      - ApiKeyAuth: []
+      - OAuth2:
+        - partner:read
+  /v1/campaigns:
+    get:
+      tags:
+      - Campaigns
+      summary: List campaigns
+      description: Cursor-paginated campaign list scoped to the authenticated partner.
+        Pages are ordered by `created_at` descending, then id descending. Pass the
+        opaque `next_cursor` back as `cursor` until `has_more` is false.
+      operationId: list_campaigns_v1_campaigns_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          description: Page size (max 100).
+          default: 25
+          title: Limit
+        description: Page size (max 100).
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 512
+          - type: 'null'
+          description: Opaque cursor from `next_cursor`.
+          title: Cursor
+        description: Opaque cursor from `next_cursor`.
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - active
+            - paused
+            - ended
+            type: string
+          - type: 'null'
+          description: Filter by delivery status.
+          title: Status
+        description: Filter by delivery status.
+      - name: objective
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - awareness
+            - consideration
+            - conversions
+            - retention
+            type: string
+          - type: 'null'
+          description: Filter by optimization objective.
+          title: Objective
+        description: Filter by optimization objective.
+      - name: name_contains
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          description: Case-insensitive substring match on name.
+          title: Name Contains
+        description: Case-insensitive substring match on name.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignListOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Missing or invalid credentials (AUTH-001).
+        '403':
+          description: Credential lacks the required scope (SCOPE-001).
+        '429':
+          description: Rate limit exceeded (RL-001). Retry after the Retry-After seconds.
+        '500':
+          description: Unexpected server error (INTERNAL-001).
+      security:
+      - ApiKeyAuth: []
+      - OAuth2:
+        - campaigns:read
+    post:
+      tags:
+      - Campaigns
+      summary: Create a campaign
+      description: 'Creates a campaign for the authenticated partner. Send an optional
+        `Idempotency-Key` header; replaying the same key with the identical body returns
+        the original response and `Idempotency-Replayed: true`. Reusing the key with
+        a different body returns 409.'
+      operationId: create_campaign_v1_campaigns_post
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Client-generated key (<=255 chars) that makes this POST safely
+            retryable.
+          title: Idempotency-Key
+        description: Client-generated key (<=255 chars) that makes this POST safely
+          retryable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CampaignCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignOut'
+        '200':
+          description: Idempotent replay of a previously created campaign.
+        '409':
+          description: Idempotency-Key reused with a different request body.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Missing or invalid credentials (AUTH-001).
+        '403':
+          description: Credential lacks the required scope (SCOPE-001).
+        '429':
+          description: Rate limit exceeded (RL-001). Retry after the Retry-After seconds.
+        '500':
+          description: Unexpected server error (INTERNAL-001).
+      security:
+      - ApiKeyAuth: []
+      - OAuth2:
+        - campaigns:write
+  /v1/campaigns/{campaign_id}:
+    get:
+      tags:
+      - Campaigns
+      summary: Get one campaign
+      description: Returns the campaign if it belongs to the authenticated partner;
+        otherwise 404.
+      operationId: get_campaign_v1_campaigns__campaign_id__get
+      parameters:
+      - name: campaign_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          description: Campaign identifier owned by the caller.
+          title: Campaign Id
+        description: Campaign identifier owned by the caller.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignOut'
+        '404':
+          description: Campaign not found for this partner.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Missing or invalid credentials (AUTH-001).
+        '403':
+          description: Credential lacks the required scope (SCOPE-001).
+        '429':
+          description: Rate limit exceeded (RL-001). Retry after the Retry-After seconds.
+        '500':
+          description: Unexpected server error (INTERNAL-001).
+      security:
+      - ApiKeyAuth: []
+      - OAuth2:
+        - campaigns:read
+    patch:
+      tags:
+      - Campaigns
+      summary: Partially update a campaign
+      description: Applies only the provided fields. If `If-Match` is sent it must
+        equal the current ETag from GET or a previous PATCH, otherwise the update
+        is rejected with 409 so concurrent writers cannot silently overwrite each
+        other.
+      operationId: update_campaign_v1_campaigns__campaign_id__patch
+      parameters:
+      - name: campaign_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          description: Campaign identifier owned by the caller.
+          title: Campaign Id
+        description: Campaign identifier owned by the caller.
+      - name: If-Match
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Current ETag; `*` matches any existing resource.
+          title: If-Match
+        description: Current ETag; `*` matches any existing resource.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CampaignUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignOut'
+        '404':
+          description: Campaign not found for this partner.
+        '409':
+          description: If-Match conflicted with the current ETag.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+        '401':
+          description: Missing or invalid credentials (AUTH-001).
+        '403':
+          description: Credential lacks the required scope (SCOPE-001).
+        '429':
+          description: Rate limit exceeded (RL-001). Retry after the Retry-After seconds.
+        '500':
+          description: Unexpected server error (INTERNAL-001).
+      security:
+      - ApiKeyAuth: []
+      - OAuth2:
+        - campaigns:write
+  /v1/reports/metrics:
+    get:
+      tags:
+      - Reports
+      summary: Aggregate campaign metrics
+      description: Aggregates daily metrics for the caller's campaigns over an inclusive
+        date window. Group by `day` or `campaign`. Raw metrics are selected with `metrics`;
+        CTR, CPC, CPM and CVR are always computed server-side. Use `format=csv` for
+        a streamed download.
+      operationId: get_metrics_v1_reports_metrics_get
+      parameters:
+      - name: start_date
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+          description: Inclusive start date (YYYY-MM-DD).
+          title: Start Date
+        description: Inclusive start date (YYYY-MM-DD).
+      - name: end_date
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+          description: Inclusive end date (YYYY-MM-DD).
+          title: End Date
+        description: Inclusive end date (YYYY-MM-DD).
+      - name: group_by
+        in: query
+        required: false
+        schema:
+          enum:
+          - day
+          - campaign
+          type: string
+          description: Aggregation bucket.
+          default: day
+          title: Group By
+        description: Aggregation bucket.
+      - name: metrics
+        in: query
+        required: false
+        schema:
+          type: string
+          description: 'Comma-separated raw metrics: impressions, clicks, spend_cents,
+            conversions.'
+          default: impressions,clicks,spend_cents,conversions
+          title: Metrics
+        description: 'Comma-separated raw metrics: impressions, clicks, spend_cents,
+          conversions.'
+      - name: campaign_ids
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: array
+            items:
+              type: integer
+          - type: 'null'
+          description: Optional campaign id filter. Repeat the parameter for multiple
+            ids.
+          title: Campaign Ids
+        description: Optional campaign id filter. Repeat the parameter for multiple
+          ids.
+      - name: format
+        in: query
+        required: false
+        schema:
+          enum:
+          - json
+          - csv
+          type: string
+          description: Response format.
+          default: json
+          title: Format
+        description: Response format.
+      responses:
+        '200':
+          description: JSON report, or a CSV stream when format=csv.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsResponse'
+            text/csv:
+              schema:
+                type: string
+        '422':
+          description: Invalid metrics, dates or date window.
+        '401':
+          description: Missing or invalid credentials (AUTH-001).
+        '403':
+          description: Credential lacks the required scope (SCOPE-001).
+        '429':
+          description: Rate limit exceeded (RL-001). Retry after the Retry-After seconds.
+        '500':
+          description: Unexpected server error (INTERNAL-001).
+      security:
+      - ApiKeyAuth: []
+      - OAuth2:
+        - reports:read
+  /v1/bulk/campaigns:
+    post:
+      tags:
+      - Bulk
+      summary: Bulk create campaigns from CSV
+      description: Upload a UTF-8 CSV with columns `name,status,daily_budget_cents,objective`.
+        Valid rows are created; invalid rows are reported with row numbers and field
+        names. Returns 200 when every row is accepted and 207 when any row is rejected.
+      operationId: bulk_campaigns_v1_bulk_campaigns_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_bulk_campaigns_v1_bulk_campaigns_post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkResult'
+        '207':
+          description: 'Partial success: at least one row was rejected.'
+        '422':
+          description: Malformed header, empty file or oversized upload.
+        '401':
+          description: Missing or invalid credentials (AUTH-001).
+        '403':
+          description: Credential lacks the required scope (SCOPE-001).
+        '429':
+          description: Rate limit exceeded (RL-001). Retry after the Retry-After seconds.
+        '500':
+          description: Unexpected server error (INTERNAL-001).
+      security:
+      - ApiKeyAuth: []
+      - OAuth2:
+        - bulk:write
+  /v1/bulk/campaigns/template.csv:
+    get:
+      tags:
+      - Bulk
+      summary: Download the campaign CSV template
+      description: Returns the exact header row accepted by the bulk import endpoint.
+      operationId: campaign_template_v1_bulk_campaigns_template_csv_get
+      responses:
+        '200':
+          description: CSV template.
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          description: Missing or invalid credentials (AUTH-001).
+        '403':
+          description: Credential lacks the required scope (SCOPE-001).
+        '429':
+          description: Rate limit exceeded (RL-001). Retry after the Retry-After seconds.
+        '500':
+          description: Unexpected server error (INTERNAL-001).
+      security:
+      - ApiKeyAuth: []
+      - OAuth2:
+        - bulk:write
+  /v1/_internal/stats:
+    get:
+      tags:
+      - Operations
+      summary: In-process request statistics
+      description: 'Returns counters for the worker process that served this request:
+        request totals, status-class breakdown, 429 count, auth-mode usage, overall
+        latency percentiles and per-endpoint latency. With multiple workers the counters
+        are per process.'
+      operationId: stats_v1__internal_stats_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Stats V1  Internal Stats Get
+        '401':
+          description: Missing or invalid credentials (AUTH-001).
+        '403':
+          description: Credential lacks the required scope (SCOPE-001).
+        '429':
+          description: Rate limit exceeded (RL-001). Retry after the Retry-After seconds.
+        '500':
+          description: Unexpected server error (INTERNAL-001).
+      security:
+      - ApiKeyAuth: []
+      - OAuth2:
+        - partner:read
+  /healthz:
+    get:
+      tags:
+      - Health
+      summary: Health check
+      description: Pings Postgres and Redis. Returns 503 when a dependency is down.
+      operationId: healthz_healthz_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '503':
+          description: Postgres or Redis is unavailable.
+      security: []
+components:
+  schemas:
+    Body_bulk_campaigns_v1_bulk_campaigns_post:
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          title: File
+          description: CSV file of campaigns to create.
+      type: object
+      required:
+      - file
+      title: Body_bulk_campaigns_v1_bulk_campaigns_post
+      description: Multipart form body containing the CSV file in the `file` field.
+    Body_issue_token_oauth_token_post:
+      properties:
+        grant_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Grant Type
+        client_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Id
+        client_secret:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Secret
+        scope:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Scope
+      type: object
+      title: Body_issue_token_oauth_token_post
+      description: 'Form-encoded OAuth 2.0 client-credentials request: grant_type,
+        client_id, client_secret and optional scope.'
+    BulkResult:
+      properties:
+        accepted:
+          type: integer
+          title: Accepted
+          description: Rows that became campaigns.
+        rejected:
+          type: integer
+          title: Rejected
+          description: Rows rejected by validation.
+        errors:
+          items:
+            $ref: '#/components/schemas/BulkRowError'
+          type: array
+          title: Errors
+          description: One entry per rejected field and row.
+        created_ids:
+          items:
+            type: integer
+          type: array
+          title: Created Ids
+          description: Ids of campaigns created by this import.
+      type: object
+      required:
+      - accepted
+      - rejected
+      - errors
+      - created_ids
+      title: BulkResult
+      description: Per-row outcome of a CSV campaign import.
+      examples:
+      - accepted: 4
+        created_ids:
+        - 26
+        - 27
+        - 28
+        - 29
+        errors:
+        - field: status
+          message: status must be active, paused or ended
+          row: 4
+        - field: daily_budget_cents
+          message: daily_budget_cents must be a non-negative integer
+          row: 6
+        rejected: 2
+    BulkRowError:
+      properties:
+        row:
+          type: integer
+          title: Row
+          description: 1-based CSV line number, including the header line.
+        field:
+          type: string
+          title: Field
+          description: Column that failed validation.
+        message:
+          type: string
+          title: Message
+          description: Human-readable, actionable validation message.
+      type: object
+      required:
+      - row
+      - field
+      - message
+      title: BulkRowError
+      description: One validation failure for one CSV row and column.
+    CampaignCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 200
+          minLength: 1
+          title: Name
+          description: Human-readable campaign name, shown in every report.
+          examples:
+          - Acme Conversion Blitz 04
+        status:
+          type: string
+          enum:
+          - active
+          - paused
+          - ended
+          title: Status
+          description: Campaign delivery state.
+          default: active
+          examples:
+          - active
+        daily_budget_cents:
+          type: integer
+          maximum: 100000000.0
+          minimum: 0.0
+          title: Daily Budget Cents
+          description: Daily budget in minor currency units (cents).
+          default: 0
+          examples:
+          - 75000
+        objective:
+          type: string
+          enum:
+          - awareness
+          - consideration
+          - conversions
+          - retention
+          title: Objective
+          description: Optimisation objective.
+          default: awareness
+          examples:
+          - conversions
+      type: object
+      required:
+      - name
+      title: CampaignCreate
+      description: Fields accepted when creating a campaign.
+      examples:
+      - daily_budget_cents: 75000
+        name: Acme Conversion Blitz 04
+        objective: conversions
+        status: active
+    CampaignListOut:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/CampaignOut'
+          type: array
+          title: Data
+          description: Campaigns on this page.
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next Cursor
+          description: Opaque base64 cursor; pass as `cursor` to continue. Null on
+            the last page.
+        has_more:
+          type: boolean
+          title: Has More
+          description: True when another page exists.
+      type: object
+      required:
+      - data
+      - has_more
+      title: CampaignListOut
+      description: One page of campaigns plus the cursor for the next page.
+      examples:
+      - data:
+        - created_at: '2026-01-14T09:00:00Z'
+          daily_budget_cents: 75000
+          id: 42
+          name: Acme Conversion Blitz 04
+          objective: conversions
+          status: active
+          updated_at: '2026-01-15T11:30:00Z'
+        has_more: true
+        next_cursor: eyJjcmVhdGVkX2F0IjoiMjAyNi0wMS0xNCIsImlkIjo0Mn0
+    CampaignOut:
+      properties:
+        id:
+          type: integer
+          title: Id
+          description: Campaign identifier (unique within the platform).
+        name:
+          type: string
+          title: Name
+          description: Campaign name.
+        status:
+          type: string
+          title: Status
+          description: active, paused or ended.
+        daily_budget_cents:
+          type: integer
+          title: Daily Budget Cents
+          description: Daily budget in cents.
+        objective:
+          type: string
+          title: Objective
+          description: awareness, consideration, conversions or retention.
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: Creation timestamp (UTC).
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+          description: Last modification timestamp; also drives the ETag.
+      type: object
+      required:
+      - id
+      - name
+      - status
+      - daily_budget_cents
+      - objective
+      - created_at
+      - updated_at
+      title: CampaignOut
+      description: A campaign owned by the authenticated partner.
+      examples:
+      - created_at: '2026-01-14T09:00:00Z'
+        daily_budget_cents: 75000
+        id: 42
+        name: Acme Conversion Blitz 04
+        objective: conversions
+        status: active
+        updated_at: '2026-01-15T11:30:00Z'
+    CampaignUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+            maxLength: 200
+            minLength: 1
+          - type: 'null'
+          title: Name
+        status:
+          anyOf:
+          - type: string
+            enum:
+            - active
+            - paused
+            - ended
+          - type: 'null'
+          title: Status
+        daily_budget_cents:
+          anyOf:
+          - type: integer
+            maximum: 100000000.0
+            minimum: 0.0
+          - type: 'null'
+          title: Daily Budget Cents
+        objective:
+          anyOf:
+          - type: string
+            enum:
+            - awareness
+            - consideration
+            - conversions
+            - retention
+          - type: 'null'
+          title: Objective
+      type: object
+      title: CampaignUpdate
+      description: Partial update. Omitted fields are left untouched.
+      examples:
+      - daily_budget_cents: 50000
+        status: paused
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+      description: Framework-level validation detail schema (API errors use the error
+        envelope).
+    MetricRow:
+      properties:
+        date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Date
+          description: Day bucket (group_by=day only).
+        campaign_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Campaign Id
+          description: Campaign bucket id.
+        campaign_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Campaign Name
+          description: Campaign bucket name.
+        impressions:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Impressions
+          description: Total impressions.
+        clicks:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Clicks
+          description: Total clicks.
+        spend_cents:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Spend Cents
+          description: Total spend in cents.
+        conversions:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Conversions
+          description: Total conversions.
+        ctr_pct:
+          type: number
+          title: Ctr Pct
+          description: 'Click-through rate %: clicks / impressions * 100.'
+        cpc_cents:
+          type: number
+          title: Cpc Cents
+          description: 'Cost per click in cents: spend_cents / clicks.'
+        cpm_cents:
+          type: number
+          title: Cpm Cents
+          description: 'Cost per mille in cents: spend_cents / impressions * 1000.'
+        cvr_pct:
+          type: number
+          title: Cvr Pct
+          description: 'Conversion rate %: conversions / clicks * 100.'
+      type: object
+      required:
+      - ctr_pct
+      - cpc_cents
+      - cpm_cents
+      - cvr_pct
+      title: MetricRow
+      description: 'Aggregated metrics for one day or one campaign.
+
+
+        Requested raw metrics are included; derived metrics are always computed server-side.'
+    MetricsResponse:
+      properties:
+        start_date:
+          type: string
+          format: date
+          title: Start Date
+          description: Inclusive start of the reported window.
+        end_date:
+          type: string
+          format: date
+          title: End Date
+          description: Inclusive end of the reported window.
+        group_by:
+          type: string
+          title: Group By
+          description: 'Bucket dimension: day or campaign.'
+        metrics:
+          items:
+            type: string
+          type: array
+          title: Metrics
+          description: Raw metrics requested and included in each row.
+        row_count:
+          type: integer
+          title: Row Count
+          description: Number of aggregated rows returned.
+        data:
+          items:
+            $ref: '#/components/schemas/MetricRow'
+          type: array
+          title: Data
+          description: Aggregated rows, ordered by bucket.
+      type: object
+      required:
+      - start_date
+      - end_date
+      - group_by
+      - metrics
+      - row_count
+      - data
+      title: MetricsResponse
+      description: Metric report payload (JSON format).
+      examples:
+      - data:
+        - clicks: 1203
+          conversions: 61
+          cpc_cents: 71.82
+          cpm_cents: 1792.03
+          ctr_pct: 2.4952
+          cvr_pct: 5.0707
+          date: '2026-01-01'
+          impressions: 48213
+          spend_cents: 86400
+        end_date: '2026-01-31'
+        group_by: day
+        metrics:
+        - impressions
+        - clicks
+        - spend_cents
+        - conversions
+        row_count: 1
+        start_date: '2026-01-01'
+    PartnerProfile:
+      properties:
+        id:
+          type: integer
+          title: Id
+          description: Stable partner identifier.
+        name:
+          type: string
+          title: Name
+          description: Display name of the advertiser, agency or integration partner.
+        tier:
+          type: string
+          title: Tier
+          description: 'Commercial tier: free, standard or enterprise.'
+        rate_limit_rpm:
+          type: integer
+          title: Rate Limit Rpm
+          description: Sustained request budget in requests per minute.
+        rate_limit_burst:
+          type: integer
+          title: Rate Limit Burst
+          description: Maximum burst capacity (2x the sustained rate).
+        scopes:
+          items:
+            type: string
+          type: array
+          title: Scopes
+          description: Scopes granted to the credential used for this call.
+        auth_mode:
+          type: string
+          title: Auth Mode
+          description: 'Authentication mode used: `api_key` or `oauth`.'
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+          description: Partner onboarding timestamp (UTC).
+      type: object
+      required:
+      - id
+      - name
+      - tier
+      - rate_limit_rpm
+      - rate_limit_burst
+      - scopes
+      - auth_mode
+      - created_at
+      title: PartnerProfile
+      description: The authenticated partner's profile and entitlements.
+      examples:
+      - auth_mode: oauth
+        created_at: '2026-01-02T08:00:00Z'
+        id: 3
+        name: Initech Global
+        rate_limit_burst: 6000
+        rate_limit_rpm: 3000
+        scopes:
+        - campaigns:read
+        - campaigns:write
+        - reports:read
+        tier: enterprise
+    TokenResponse:
+      properties:
+        access_token:
+          type: string
+          title: Access Token
+          description: 'Signed JWT to send as `Authorization: Bearer <token>`.'
+        token_type:
+          type: string
+          title: Token Type
+          description: Always `bearer`.
+          default: bearer
+        expires_in:
+          type: integer
+          title: Expires In
+          description: Token lifetime in seconds.
+        scope:
+          type: string
+          title: Scope
+          description: Space-delimited scopes granted to the token.
+      type: object
+      required:
+      - access_token
+      - expires_in
+      - scope
+      title: TokenResponse
+      description: OAuth access token response (RFC 6749 section 5.1).
+      examples:
+      - access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        expires_in: 3600
+        scope: campaigns:read campaigns:write reports:read
+        token_type: bearer
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+      description: Framework-level validation detail schema (API errors use the error
+        envelope).
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Long-lived partner key formatted as `apph_live_<prefix>_<secret>`.
+        Send it on every request.
+    OAuth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: /oauth/token
+          scopes:
+            partner:read: Read the partner profile and internal stats.
+            campaigns:read: Read campaigns and their configuration.
+            campaigns:write: Create and update campaigns.
+            reports:read: Read aggregated performance reports.
+            bulk:write: Import campaigns from CSV.
+tags:
+- name: Health
+  description: Liveness and dependency checks.
+- name: OAuth
+  description: OAuth 2.0 client-credentials token issuance for integration partners.
+- name: Partners
+  description: The authenticated partner profile and entitlements.
+- name: Campaigns
+  description: Campaign CRUD with cursor pagination and idempotency.
+- name: Reports
+  description: Aggregated performance metrics as JSON or streamed CSV.
+- name: Bulk
+  description: CSV campaign import and downloadable templates.
+- name: Operations
+  description: In-process observability for support engineering.

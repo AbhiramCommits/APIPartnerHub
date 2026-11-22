@@ -7,7 +7,7 @@ import json
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
@@ -67,7 +67,7 @@ def _replay(record: IdempotencyRecord) -> JSONResponse:
         "`next_cursor` back as `cursor` until `has_more` is false."
     ),
 )
-async def list_campaigns(
+def list_campaigns(
     context: Annotated[AuthContext, Depends(require_scopes("campaigns:read"))],
     session: Annotated[Session, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=100, description="Page size (max 100).")] = 25,
@@ -130,7 +130,7 @@ async def list_campaigns(
         409: {"description": "Idempotency-Key reused with a different request body."},
     },
 )
-async def create_campaign(
+def create_campaign(
     payload: CampaignCreate,
     request: Request,
     response: Response,
@@ -215,8 +215,8 @@ async def create_campaign(
     description="Returns the campaign if it belongs to the authenticated partner; otherwise 404.",
     responses={404: {"description": "Campaign not found for this partner."}},
 )
-async def get_campaign(
-    campaign_id: int,
+def get_campaign(
+    campaign_id: Annotated[int, Path(description="Campaign identifier owned by the caller.")],
     context: Annotated[AuthContext, Depends(require_scopes("campaigns:read"))],
     session: Annotated[Session, Depends(get_session)],
     response: Response,
@@ -240,8 +240,8 @@ async def get_campaign(
         409: {"description": "If-Match conflicted with the current ETag."},
     },
 )
-async def update_campaign(
-    campaign_id: int,
+def update_campaign(
+    campaign_id: Annotated[int, Path(description="Campaign identifier owned by the caller.")],
     payload: CampaignUpdate,
     context: Annotated[AuthContext, Depends(require_scopes("campaigns:write"))],
     session: Annotated[Session, Depends(get_session)],

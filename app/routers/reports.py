@@ -77,7 +77,7 @@ def _parse_metrics(metrics: str) -> list[str]:
         422: {"description": "Invalid metrics, dates or date window."},
     },
 )
-async def get_metrics(
+def get_metrics(
     context: Annotated[AuthContext, Depends(require_scopes("reports:read"))],
     session: Annotated[Session, Depends(get_session)],
     start_date: Annotated[date, Query(description="Inclusive start date (YYYY-MM-DD).")],

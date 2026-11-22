@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
@@ -146,7 +146,7 @@ def authenticate(request: Request, session: Session) -> AuthContext:
     )
 
 
-async def get_auth_context(
+def get_auth_context(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
 ) -> AuthContext:
@@ -155,7 +155,7 @@ async def get_auth_context(
     return authenticate(request, session)
 
 
-async def api_key_auth(
+def api_key_auth(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
 ) -> AuthContext:
@@ -167,7 +167,7 @@ async def api_key_auth(
     return context
 
 
-async def oauth_bearer_auth(
+def oauth_bearer_auth(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
 ) -> AuthContext:
@@ -179,13 +179,13 @@ async def oauth_bearer_auth(
     return context
 
 
-ScopeDependency = Callable[..., Awaitable[AuthContext]]
+ScopeDependency = Callable[..., AuthContext]
 
 
 def require_scopes(*required: str) -> ScopeDependency:
     """Build a dependency accepting API key *or* OAuth credentials with all given scopes."""
 
-    async def dependency(
+    def dependency(
         request: Request,
         session: Annotated[Session, Depends(get_session)],
     ) -> AuthContext:

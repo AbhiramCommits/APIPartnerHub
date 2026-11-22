@@ -209,6 +209,8 @@ class MetricsResponse(BaseModel):
 
 
 class BulkRowError(BaseModel):
+    """One validation failure for one CSV row and column."""
+
     row: int = Field(description="1-based CSV line number, including the header line.")
     field: str = Field(description="Column that failed validation.")
     message: str = Field(description="Human-readable, actionable validation message.")

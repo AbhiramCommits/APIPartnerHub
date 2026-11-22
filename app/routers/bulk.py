@@ -38,12 +38,12 @@ MAX_UPLOAD_BYTES = 5 * 1024 * 1024
         422: {"description": "Malformed header, empty file or oversized upload."},
     },
 )
-async def bulk_campaigns(
+def bulk_campaigns(
     context: Annotated[AuthContext, Depends(require_scopes("bulk:write"))],
     session: Annotated[Session, Depends(get_session)],
     file: Annotated[UploadFile, File(description="CSV file of campaigns to create.")],
 ) -> JSONResponse:
-    raw = await file.read(MAX_UPLOAD_BYTES + 1)
+    raw = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(raw) > MAX_UPLOAD_BYTES:
         raise ValidationFailed(
             "CSV upload is too large.",
@@ -177,7 +177,7 @@ def _validate_row(row: dict[str, str]) -> list[dict[str, Any]]:
         }
     },
 )
-async def campaign_template(
+def campaign_template(
     context: Annotated[AuthContext, Depends(require_scopes("bulk:write"))],
 ) -> Response:
     header = ",".join(REQUIRED_COLUMNS) + "\n"

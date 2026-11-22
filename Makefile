@@ -49,9 +49,11 @@ ci: lint typecheck test
 
 openapi:
 	$(PY) -m scripts.export_openapi
+	$(PY) -m scripts.validate_openapi
 
 openapi-check:
 	$(PY) -m scripts.export_openapi --check
+	$(PY) -m scripts.validate_openapi
 
 sdk-install:
 	$(PIP) install -e sdks/python

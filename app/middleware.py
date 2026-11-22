@@ -9,6 +9,7 @@ import time
 import uuid
 
 from fastapi import Request
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
@@ -64,13 +65,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             retry_after=0,
         )
         try:
-            with SessionLocal() as session:
-                context = authenticate(request, session)
-            decision = limiter.check(
-                context.partner.id,
-                context.partner.tier,
-                context.partner.rate_limit_rpm,
-            )
+            decision = await run_in_threadpool(_authenticate_and_check_limit, request)
         except APIError:
             # The route dependency raises the same authored error with the full envelope.
             pass
@@ -117,6 +112,18 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
         latency_ms = (time.perf_counter() - started) * 1000
         _log_access(request, status_code, latency_ms)
         return response
+
+
+def _authenticate_and_check_limit(request: Request) -> RateLimitDecision:
+    """Blocking auth + Redis call executed in the threadpool, never on the event loop."""
+
+    with SessionLocal() as session:
+        context = authenticate(request, session)
+        return limiter.check(
+            context.partner.id,
+            context.partner.tier,
+            context.partner.rate_limit_rpm,
+        )
 
 
 def _path_template(request: Request) -> str:
