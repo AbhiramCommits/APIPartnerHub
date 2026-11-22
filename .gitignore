@@ -1,0 +1,39 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.db
+*.sqlite3
+*.egg-info/
+build/
+dist/
+
+# Node / TypeScript SDK
+node_modules/
+sdks/typescript/dist/
+sdks/typescript/coverage/
+
+# Benchmark raw output (RESULTS.md and CSV are intentionally committed)
+bench/results/raw_*.json
+bench/results/*.tmp
+
+# Seed credentials are printed once and never committed
+.seed_credentials.json
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
