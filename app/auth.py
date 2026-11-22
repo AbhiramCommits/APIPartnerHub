@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -29,6 +32,37 @@ from app.security import (
 logger = logging.getLogger("apipartnerhub.auth")
 
 LAST_USED_WRITE_INTERVAL = timedelta(seconds=60)
+VERIFIED_KEY_TTL_SECONDS = 30.0
+_MAX_CACHED_KEYS = 4096
+
+# Argon2 verification is deliberately expensive. Cache a successful verification for a short
+# window to keep high-concurrency API-key traffic cheap; revocation is still read from the
+# database on every request, so a revoked key stops working immediately.
+_VERIFIED_CACHE: dict[str, tuple[str, float]] = {}
+_VERIFIED_LOCK = threading.Lock()
+
+
+def _digest(plaintext: str) -> str:
+    return hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
+
+
+def _was_verified(prefix: str, digest: str) -> bool:
+    with _VERIFIED_LOCK:
+        entry = _VERIFIED_CACHE.get(prefix)
+        if entry is None:
+            return False
+        cached_digest, expires_at = entry
+        if time.monotonic() >= expires_at:
+            _VERIFIED_CACHE.pop(prefix, None)
+            return False
+        return cached_digest == digest
+
+
+def _remember_verified(prefix: str, digest: str) -> None:
+    with _VERIFIED_LOCK:
+        if len(_VERIFIED_CACHE) > _MAX_CACHED_KEYS:
+            _VERIFIED_CACHE.clear()
+        _VERIFIED_CACHE[prefix] = (digest, time.monotonic() + VERIFIED_KEY_TTL_SECONDS)
 
 
 @dataclass(slots=True)
@@ -65,10 +99,15 @@ def _authenticate_api_key(request: Request, session: Session, plaintext: str) ->
         raise AuthError("Malformed API key. Expected the format apph_live_<prefix>_<secret>.")
     prefix, _secret = parsed
     api_key = session.scalar(select(ApiKey).where(ApiKey.prefix == prefix))
-    if api_key is None or not verify_secret(plaintext, api_key.key_hash):
+    if api_key is None:
         raise AuthError("Invalid API key.")
     if api_key.revoked_at is not None:
         raise AuthError("This API key has been revoked. Create a new key in the partner portal.")
+    digest = _digest(plaintext)
+    if not _was_verified(prefix, digest):
+        if not verify_secret(plaintext, api_key.key_hash):
+            raise AuthError("Invalid API key.")
+        _remember_verified(prefix, digest)
     partner = session.get(Partner, api_key.partner_id)
     if partner is None:
         raise AuthError("The API key is not associated with an active partner.")

@@ -29,6 +29,7 @@ sdks/typescript/coverage/
 # Benchmark raw output (RESULTS.md and CSV are intentionally committed)
 bench/results/raw_*.json
 bench/results/*.tmp
+bench/results/server.log
 
 # Seed credentials are printed once and never committed
 .seed_credentials.json

@@ -26,7 +26,7 @@ ALL_SCOPES = [
     "reports:read",
     "bulk:write",
 ]
-_PASSWORD_HASHER = PasswordHasher(time_cost=2, memory_cost=65536, parallelism=2)
+_PASSWORD_HASHER = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1)
 
 
 def hash_secret(secret: str) -> str:

@@ -3,7 +3,10 @@ PY ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 API_PORT ?= 8000
 HOST ?= 127.0.0.1
-UVICORN_WORKERS ?= 4
+BENCH_PORT ?= 8011
+BENCH_WORKERS ?= 4
+BENCH_CONCURRENCY ?= 20
+BENCH_DURATION ?= 8
 
 -include .env
 export
@@ -64,7 +67,14 @@ sdk-test:
 	cd sdks/typescript && npm test
 
 bench:
-	$(PY) -m bench.run_bench
+	docker compose up -d --wait
+	$(PY) -m scripts.seed
+	$(PY) -m bench.run_bench --port $(BENCH_PORT) --workers $(BENCH_WORKERS) \
+		--concurrency $(BENCH_CONCURRENCY) --duration $(BENCH_DURATION)
+	$(PY) -m bench.analyze
+
+analyze:
+	$(PY) -m bench.analyze
 
 examples:
 	$(PY) examples/python/01_auth_api_key.py
